@@ -14,6 +14,7 @@ export type WaterfallExec<T, C = never> = C extends {}
 export type Waterfall<T, C> = {
   exec: WaterfallExec<T, C>;
   register: TWaterfallRegister<T, C>;
+  listeners: WaterfallMiddleware<T, C>
 };
 
 export type CreateWaterfallHook = {
@@ -48,5 +49,5 @@ export const waterfall: CreateWaterfallHook = function (
     }, Promise.resolve(initial));
   };
 
-  return { register, exec } as any;
+  return { register, exec, listeners } as any;
 };

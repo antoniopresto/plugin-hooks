@@ -8,6 +8,7 @@ export declare type ParallelExec<T, C = never> = C extends {} ? (initialValue: T
 export declare type Parallel<T, C> = {
     exec: ParallelExec<T, C>;
     register: TParallelRegister<T, C>;
+    listeners: ParallelMiddleware<T, C>;
 };
 export declare type CreateParallelHook = {
     <T, C = undefined>(hookName: string, paramName: string): Parallel<T, C>;

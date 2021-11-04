@@ -12,6 +12,7 @@ export type ParallelExec<T, C = never> = C extends {}
 export type Parallel<T, C> = {
   exec: ParallelExec<T, C>;
   register: TParallelRegister<T, C>;
+  listeners: ParallelMiddleware<T, C>;
 };
 
 export type CreateParallelHook = {
@@ -40,5 +41,5 @@ export const parallel: CreateParallelHook = function (
     });
   };
 
-  return { register, exec } as any;
+  return { register, exec, listeners } as any;
 };
