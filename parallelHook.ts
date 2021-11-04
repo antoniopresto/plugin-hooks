@@ -12,7 +12,7 @@ export type ParallelExec<T, C = never> = C extends {}
 export type Parallel<T, C> = {
   exec: ParallelExec<T, C>;
   register: TParallelRegister<T, C>;
-  listeners: ParallelMiddleware<T, C>;
+  listeners: ParallelMiddleware<T, C>[];
 };
 
 export type CreateParallelHook = {

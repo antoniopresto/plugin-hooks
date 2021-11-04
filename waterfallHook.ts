@@ -14,7 +14,7 @@ export type WaterfallExec<T, C = never> = C extends {}
 export type Waterfall<T, C> = {
   exec: WaterfallExec<T, C>;
   register: TWaterfallRegister<T, C>;
-  listeners: WaterfallMiddleware<T, C>
+  listeners: WaterfallMiddleware<T, C>[]
 };
 
 export type CreateWaterfallHook = {
