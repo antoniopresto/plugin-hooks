@@ -2,7 +2,7 @@ export type ParallelMiddleware<T, C> = { (param: T, context: C): void };
 
 // returns a promise with the first middleware return
 export type TParallelRegister<T, C> = {
-  (pluginName: string, middleware: ParallelMiddleware<T, C>): void;
+  (middleware: ParallelMiddleware<T, C>): void;
 };
 
 export type ParallelExec<T, C = never> = C extends {}
@@ -16,20 +16,15 @@ export type Parallel<T, C> = {
 };
 
 export type CreateParallelHook = {
-  <T, C = undefined>(hookName: string, paramName: string): Parallel<T, C>;
+  <T, C = undefined>(): Parallel<T, C>;
 };
 
-export const parallel: CreateParallelHook = function (
-  hookName: string,
-  paramName: string
-) {
+export const parallel: CreateParallelHook = function () {
   const listeners: ParallelMiddleware<any, any>[] = [];
 
-  const register: TParallelRegister<any, any> = (pluginName, handler) => {
+  const register: TParallelRegister<any, any> = (handler) => {
     if (typeof handler !== 'function') {
-      throw new Error(
-        `${hookName}: "${typeof handler}" is not a valid handler type`
-      );
+      throw new Error(`"${typeof handler}" is not a valid handler type`);
     }
 
     listeners.push(handler);

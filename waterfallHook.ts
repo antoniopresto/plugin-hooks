@@ -3,8 +3,7 @@ export type WaterfallMiddleware<T, C> = {
 };
 
 export interface TWaterfallRegister<T, C> {
-  (pluginName: string, middleware: WaterfallMiddleware<T, C>): void;
-  timeout?: number;
+  (middleware: WaterfallMiddleware<T, C>): void;
 }
 
 export type WaterfallExec<T, C = never> = C extends {}
@@ -14,27 +13,21 @@ export type WaterfallExec<T, C = never> = C extends {}
 export type Waterfall<T, C> = {
   exec: WaterfallExec<T, C>;
   register: TWaterfallRegister<T, C>;
-  listeners: WaterfallMiddleware<T, C>[]
+  listeners: WaterfallMiddleware<T, C>[];
 };
 
 export type CreateWaterfallHook = {
-  <T, C = undefined>(hookName: string, paramName: string): Waterfall<T, C>;
+  <T, C = undefined>(): Waterfall<T, C>;
 };
 
-export const waterfall: CreateWaterfallHook = function (
-  hookName: string,
-  paramName: string
-) {
+export const waterfall: CreateWaterfallHook = function () {
   const listeners: WaterfallMiddleware<any, any>[] = [];
 
   const register: TWaterfallRegister<any, any> = (
-    pluginName: string,
     middleware: WaterfallMiddleware<any, any>
   ) => {
     if (typeof middleware !== 'function') {
-      throw new Error(
-        `${hookName}: "${typeof middleware}" is not a valid middleware type`
-      );
+      throw new Error(`"${typeof middleware}" is not a valid middleware type`);
     }
     listeners.push(middleware);
   };
