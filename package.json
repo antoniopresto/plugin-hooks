@@ -1,6 +1,6 @@
 {
   "name": "plugin-hooks",
-  "version": "1.0.0-rc1",
+  "version": "1.1.0-rc2",
   "main": "lib/index.js",
   "author": "antoniopresto <antoniopresto@gmail.com>",
   "license": "MIT",
