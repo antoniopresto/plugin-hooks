@@ -1,8 +1,11 @@
 import {
+  createFactoryContext,
+  FactoryOnExecPayload,
+  PluginContext,
   PluginExecutionInfo,
-  PluginFactoryContext,
+  PluginOptions,
   PluginRegisterInfo,
-} from './createPluginFactory';
+} from './createHooks';
 
 export type WaterfallMiddleware<T, C> = {
   (val: T, context: C, info: PluginExecutionInfo<T, C>):
@@ -23,17 +26,22 @@ export type Waterfall<T, C> = {
   exec: WaterfallExec<T, C>;
   register: TWaterfallRegister<T, C>;
   listeners: WaterfallMiddleware<T, C>[];
+  pluginContext: PluginContext<T, C>;
 };
 
 export type CreateWaterfallHook = {
-  <T, C = undefined>(factoryContext: PluginFactoryContext): Waterfall<T, C>;
+  <T, C = undefined>(options?: PluginOptions<T, C>): Waterfall<T, C>;
 };
 
 export interface waterfall extends CreateWaterfallHook {}
 export interface waterfallHook extends CreateWaterfallHook {}
 
-export const waterfall: CreateWaterfallHook = function (factoryContext) {
+export const waterfall: CreateWaterfallHook = function (options = {}) {
   const listeners: WaterfallMiddleware<any, any>[] = [];
+
+  const { pluginContext = createFactoryContext(options) } = options;
+
+  let canAddNew = true;
 
   const register: TWaterfallRegister<any, any> = (
     middleware: WaterfallMiddleware<any, any>
@@ -42,36 +50,43 @@ export const waterfall: CreateWaterfallHook = function (factoryContext) {
       throw new Error(`"${typeof middleware}" is not a valid middleware type`);
     }
 
-    factoryContext.__onRegister(middleware);
+    pluginContext.__onRegister(middleware);
     listeners.push(middleware);
 
     return {
-      index:
-        factoryContext?.getHandlerIndex(middleware) ?? listeners.length - 1,
-      existing: factoryContext?.middlewareList || listeners,
+      index: pluginContext?.getHandlerIndex(middleware) ?? listeners.length - 1,
+      existing: pluginContext?.middlewareList || listeners,
     };
   };
 
-  let frozen = false;
-  const exec: WaterfallExec<any, any> = async (initial, context) => {
-    if (!frozen) {
+  const exec: WaterfallExec<any, any> = (initial, context) => {
+    if (canAddNew) {
+      canAddNew = false;
       Object.freeze(listeners);
-      frozen = true;
     }
 
-    return await listeners.reduce(async (prev, next, index) => {
+    return listeners.reduce(async (value: any, next, index) => {
       const info = {
-        index: factoryContext.getHandlerIndex(next),
-        existing: factoryContext.middlewareList,
+        index: pluginContext.getHandlerIndex(next),
+        existing: pluginContext.middlewareList,
       };
 
-      const middlewareResult = await next(await prev, context, info);
+      type P = FactoryOnExecPayload<any, any, 'waterfall'>;
 
-      if (typeof middlewareResult === 'undefined') return prev;
+      let payload: P = {
+        kind: 'waterfall',
+        context: pluginContext,
+        current: value,
+        middleware: next,
+      };
 
-      return middlewareResult;
+      payload = await pluginContext.__onExecStart(payload);
+      payload.current = await next(await value, context, info);
+      payload = await pluginContext.__onExecEnd(payload);
+
+      return payload.current;
     }, Promise.resolve(initial));
   };
 
-  return { register, exec, listeners } as any;
+  return { register, exec, listeners, pluginContext } as any;
 };

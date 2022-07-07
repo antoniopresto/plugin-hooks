@@ -1,8 +1,11 @@
 import {
+  createFactoryContext,
+  PluginOptions,
   PluginExecutionInfo,
-  PluginFactoryContext,
+  PluginContext,
   PluginRegisterInfo,
-} from './createPluginFactory';
+  FactoryOnExecPayload,
+} from './createHooks';
 
 export type ParallelMiddleware<T, C> = {
   (param: T, context: C, info: PluginExecutionInfo<T, C>): void;
@@ -21,45 +24,68 @@ export type Parallel<T, C> = {
   exec: ParallelExec<T, C>;
   register: TParallelRegister<T, C>;
   listeners: ParallelMiddleware<T, C>[];
+  context: PluginContext<T, C>;
 };
 
 export type CreateParallelHook = {
-  <T, C = undefined>(factoryContext: PluginFactoryContext): Parallel<T, C>;
+  <T, C = undefined>(options?: PluginOptions<T, C>): Parallel<T, C>;
 };
 
 export interface parallel extends CreateParallelHook {}
 export interface parallelHook extends CreateParallelHook {}
 
-export const parallel: CreateParallelHook = function (factoryContext) {
+export const parallel: CreateParallelHook = function (options = {}) {
+  const { pluginContext = createFactoryContext(options) } = options;
+  const { executionsCountLimit } = pluginContext;
+
   const listeners: ParallelMiddleware<any, any>[] = [];
 
-  const register: TParallelRegister<any, any> = (handler) => {
-    if (typeof handler !== 'function') {
-      throw new Error(`"${typeof handler}" is not a valid handler type`);
+  const register: TParallelRegister<any, any> = (middleware) => {
+    if (typeof middleware !== 'function') {
+      throw new Error(`"${typeof middleware}" is not a valid middleware type`);
     }
-    factoryContext.__onRegister(handler);
-    listeners.push(handler);
+    pluginContext.__onRegister(middleware);
+    listeners.push(middleware);
 
     return {
-      index: factoryContext.getHandlerIndex(handler),
-      existing: factoryContext.middlewareList,
+      index: pluginContext.getHandlerIndex(middleware),
+      existing: pluginContext.middlewareList,
     };
   };
 
-  let frozen = false;
-  const exec: ParallelExec<any, any> = (param, context) => {
-    if (!frozen) {
-      Object.freeze(listeners);
-      frozen = true;
+  const exec: ParallelExec<any, any> = (value, context) => {
+    const nextCount = pluginContext.lastExecutionStartCount + 1;
+    if (nextCount > executionsCountLimit) {
+      throw new Error(
+        `This plugin has a executions count limit of ${executionsCountLimit}.\n` +
+          `The next run count would be ${nextCount}.\n`
+      );
     }
+    pluginContext.lastExecutionStartCount = nextCount;
 
     listeners.forEach((middleware, index) => {
-      middleware(param, context, {
-        index: factoryContext.getHandlerIndex(middleware) ?? index,
-        existing: factoryContext.middlewareList,
+      type P = FactoryOnExecPayload<any, any, 'parallel'>;
+
+      let payload: P = {
+        kind: 'parallel',
+        context: pluginContext,
+        middleware,
+        current: value,
+      };
+
+      payload = pluginContext.__onExecStart(payload) as P;
+
+      middleware(payload.current, context, {
+        index: pluginContext.getHandlerIndex(middleware) ?? index,
+        existing: pluginContext.middlewareList,
       });
+
+      pluginContext.__onExecEnd(payload);
     });
   };
 
-  return { register, exec, listeners } as any;
+  return { register, exec, listeners, context: pluginContext } as Parallel<
+    any,
+    any
+  >;
 };

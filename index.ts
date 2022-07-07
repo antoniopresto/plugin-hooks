@@ -14,7 +14,7 @@ import { waterfall, CreateWaterfallHook } from './waterfallHook';
 
 export * from './parallelHook';
 export * from './waterfallHook';
-export * from './createPluginFactory';
+export * from './createHooks';
 
 export const pluginHooks = {
   parallel,
