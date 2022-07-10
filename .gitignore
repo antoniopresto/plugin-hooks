@@ -74,3 +74,4 @@ webpack-stats.json
 
 # Modern Relay
 __generated__
+/lib/

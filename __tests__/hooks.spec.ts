@@ -74,7 +74,7 @@ describe('hooks', () => {
 
   describe('waterfall', () => {
     test('waterfall', async () => {
-      const hook = waterfall<number>();
+      const hook = waterfall<number, {}>();
 
       hook.register(function times2(val) {
         return val * 2;
@@ -84,8 +84,49 @@ describe('hooks', () => {
         return val * 3;
       });
 
-      const r1 = await hook.exec(1);
+      const r1 = await hook.exec(1, {});
       expect(r1).toBe(6);
+    });
+
+    test('handle closeWithResult', async () => {
+      const hook = waterfall<number>();
+
+      hook.register(function times2(val, _, closeWithResult) {
+        return closeWithResult(555);
+      });
+
+      let calledNext = false;
+      hook.register(async function times3(val) {
+        calledNext = true;
+        return val * 3;
+      });
+
+      const r1 = await hook.exec(1);
+      expect(r1).toBe(555);
+      expect(calledNext).toBe(false);
+    });
+
+    test('throw early result', async () => {
+      const hook = waterfall<number>();
+
+      hook.register(function times2(val, _, info) {
+        expect(info.index).toBe(0);
+
+        throw {
+          fulfilled: true,
+          value: 7777,
+        };
+      });
+
+      let calledNext = false;
+      hook.register(async function times3(val) {
+        calledNext = true;
+        return val * 3;
+      });
+
+      const r1 = await hook.exec(1);
+      expect(r1).toBe(7777);
+      expect(calledNext).toBe(false);
     });
   });
 
@@ -108,6 +149,38 @@ describe('hooks', () => {
       expect(r1).toBe(undefined);
       expect(mutable.foo).toBe(123);
       expect(mutable.bar).toBe(456);
+    });
+
+    test('handle closeWithResult', async () => {
+      const hook = parallel<number>();
+
+      hook.register(function times1(val, _a, closeWithResult) {
+        return closeWithResult(555);
+      });
+
+      let calledNext = false;
+      hook.register(async function times3(val) {
+        calledNext = true;
+        return val * 3;
+      });
+
+      expect(calledNext).toBe(false);
+    });
+
+    test('throw errors', async () => {
+      const hook = parallel<any>();
+
+      const mutable: any = {};
+
+      hook.register(function times2(val) {
+        throw 'foo';
+      });
+
+      hook.register(function times2(val) {
+        return (val.bar = 456);
+      });
+
+      expect(() => hook.exec(mutable)).toThrow('foo');
     });
   });
 });

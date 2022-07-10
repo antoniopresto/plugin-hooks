@@ -3,8 +3,8 @@ import { Waterfall, waterfall, WaterfallMiddleware } from './waterfallHook';
 import { createType, FieldDefinitionConfig } from '@darch/schema';
 
 export interface PluginOptions<T, C> {
-  onExecStart?: FactoryOnMiddlewareExec<T, C>;
-  onExecEnd?: FactoryOnMiddlewareExec<T, C>;
+  onPluginExecStart?: OnMiddlewareExec<T, C>;
+  onPluginExecEnd?: OnMiddlewareExec<T, C>;
   executionsCountLimit?: number;
   schema?: FieldDefinitionConfig;
   pluginContext?: PluginContext<T, C>;
@@ -18,6 +18,8 @@ export interface PluginRegisterInfo<T, C> {
 export interface PluginExecutionInfo<T, C> {
   index: number;
   existing: (ParallelMiddleware<T, C> | WaterfallMiddleware<T, C>)[];
+  closeWithResult: (result: T) => any;
+  (result: T): any;
 }
 
 export interface PluginContext<T, C> {
@@ -33,11 +35,11 @@ export interface PluginContext<T, C> {
   __onRegister(
     middleware: WaterfallMiddleware<T, C> | ParallelMiddleware<T, C>
   ): void;
-  __onExecStart: FactoryOnMiddlewareExec<T, C>;
-  __onExecEnd: FactoryOnMiddlewareExec<T, C>;
+  __onPluginExecStart: OnMiddlewareExec<T, C>;
+  __onPluginExecEnd: OnMiddlewareExec<T, C>;
 }
 
-export type FactoryOnExecPayload<
+export type OnPluginExecArgument<
   T,
   C,
   Kind extends 'waterfall' | 'parallel'
@@ -48,21 +50,33 @@ export type FactoryOnExecPayload<
   middleware: WaterfallMiddleware<T, C> | ParallelMiddleware<T, C>;
 };
 
-export type AnyPayload = FactoryOnExecPayload<any, any, any>;
+export type AnyPayload = OnPluginExecArgument<any, any, any>;
 
-export type FactoryOnMiddlewareExec<T, C> = <
-  Kind extends 'waterfall' | 'parallel'
->(
-  payload: FactoryOnExecPayload<T, C, Kind>
-) => Kind extends 'waterfall'
-  ? Promise<FactoryOnExecPayload<T, C, Kind>>
-  : FactoryOnExecPayload<T, C, Kind>;
+export type OnMiddlewareExec<T, C> = <Kind extends 'waterfall' | 'parallel'>(
+  payload: OnPluginExecArgument<T, C, Kind>
+) =>
+  | OnPluginExecArgument<T, C, Kind>
+  | Promise<OnPluginExecArgument<T, C, Kind>>;
 
 export type PluginFactory<T, C> = {
   parallel(options?: Omit<PluginOptions<T, C>, 'context'>): Parallel<T, C>;
   waterfall(options?: Omit<PluginOptions<T, C>, 'context'>): Waterfall<T, C>;
   context: PluginContext<T, C>;
 };
+
+export type EarlyHookResult = {
+  fulfilled: true;
+  value: any;
+};
+
+export function isEarlyHookResult(input: any): input is EarlyHookResult {
+  return (
+    input &&
+    typeof input === 'object' &&
+    input.fulfilled === true &&
+    input.hasOwnProperty?.('value')
+  );
+}
 
 export function randomStringSimple() {
   return (Math.random() * 99999).toFixed() + (Math.random() * 99999).toFixed();
@@ -79,8 +93,8 @@ export function createFactoryContext<T, C>(
 
   const {
     schema,
-    onExecEnd,
-    onExecStart,
+    onPluginExecEnd,
+    onPluginExecStart,
     executionsCountLimit = Infinity,
   } = options;
 
@@ -97,14 +111,14 @@ export function createFactoryContext<T, C>(
     lastExecutionStartCount: 0,
     lastExecutionEndCount: 0,
     __onRegister: undefined as any,
-    __onExecStart: undefined as any,
-    __onExecEnd: undefined as any,
+    __onPluginExecStart: undefined as any,
+    __onPluginExecEnd: undefined as any,
   };
 
   function getResult(
     payload: AnyPayload,
-    onStart?: FactoryOnMiddlewareExec<any, any>,
-    onEnd?: FactoryOnMiddlewareExec<any, any>
+    onStart?: OnMiddlewareExec<any, any>,
+    onEnd?: OnMiddlewareExec<any, any>
   ): AnyPayload | Promise<AnyPayload> {
     //
     // Waterfall
@@ -148,12 +162,12 @@ export function createFactoryContext<T, C>(
     return candidateResult;
   }
 
-  context.__onExecStart = function __onExecStart(payload): any {
-    return getResult(payload, onExecStart, undefined);
+  context.__onPluginExecStart = function __onPluginExecStart(payload): any {
+    return getResult(payload, onPluginExecStart, undefined);
   };
 
-  context.__onExecEnd = function __onExecEnd(payload): any {
-    return getResult(payload, undefined, onExecEnd);
+  context.__onPluginExecEnd = function __onPluginExecEnd(payload): any {
+    return getResult(payload, undefined, onPluginExecEnd);
   };
 
   context.__onRegister = function __onRegister(handler) {

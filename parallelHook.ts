@@ -4,7 +4,7 @@ import {
   PluginExecutionInfo,
   PluginContext,
   PluginRegisterInfo,
-  FactoryOnExecPayload,
+  OnPluginExecArgument,
 } from './createHooks';
 
 export type ParallelMiddleware<T, C> = {
@@ -63,25 +63,45 @@ export const parallel: CreateParallelHook = function (options = {}) {
     }
     pluginContext.lastExecutionStartCount = nextCount;
 
-    listeners.forEach((middleware, index) => {
-      type P = FactoryOnExecPayload<any, any, 'parallel'>;
+    const symbol = '__FORCE:FINISHED:VALUE__';
+    let forceFinishedValue = symbol;
 
-      let payload: P = {
-        kind: 'parallel',
-        context: pluginContext,
-        middleware,
-        current: value,
-      };
+    try {
+      listeners.forEach((middleware, index) => {
+        function closeWithResult(result: any) {
+          forceFinishedValue = result;
+          throw symbol;
+        }
 
-      payload = pluginContext.__onExecStart(payload) as P;
+        const info: PluginExecutionInfo<any, any> = Object.assign(
+          closeWithResult,
+          {
+            index: pluginContext.getHandlerIndex(middleware),
+            existing: pluginContext.middlewareList,
+            closeWithResult,
+          }
+        );
 
-      middleware(payload.current, context, {
-        index: pluginContext.getHandlerIndex(middleware) ?? index,
-        existing: pluginContext.middlewareList,
+        type P = OnPluginExecArgument<any, any, 'parallel'>;
+
+        let payload: P = {
+          kind: 'parallel',
+          context: pluginContext,
+          middleware,
+          current: value,
+        };
+
+        payload = pluginContext.__onPluginExecStart(payload) as P;
+
+        middleware(payload.current, context, info);
+
+        pluginContext.__onPluginExecEnd(payload);
       });
-
-      pluginContext.__onExecEnd(payload);
-    });
+    } catch (e) {
+      if (e !== symbol) {
+        throw e;
+      }
+    }
   };
 
   return { register, exec, listeners, context: pluginContext } as Parallel<

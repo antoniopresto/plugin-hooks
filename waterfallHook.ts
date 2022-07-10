@@ -1,6 +1,7 @@
 import {
   createFactoryContext,
-  FactoryOnExecPayload,
+  isEarlyHookResult,
+  OnPluginExecArgument,
   PluginContext,
   PluginExecutionInfo,
   PluginOptions,
@@ -59,33 +60,50 @@ export const waterfall: CreateWaterfallHook = function (options = {}) {
     };
   };
 
-  const exec: WaterfallExec<any, any> = (initial, context) => {
+  const exec: WaterfallExec<any, any> = async (initial, context) => {
     if (canAddNew) {
       canAddNew = false;
       Object.freeze(listeners);
     }
 
-    return listeners.reduce(async (value: any, next, index) => {
-      const info = {
-        index: pluginContext.getHandlerIndex(next),
-        existing: pluginContext.middlewareList,
-      };
+    const symbol = '__FORCE:FINISHED:VALUE__';
+    let forceFinishedValue = symbol;
 
-      type P = FactoryOnExecPayload<any, any, 'waterfall'>;
+    try {
+      return await listeners.reduce(async (value: any, next, index) => {
+        function closeWithResult(result: any) {
+          forceFinishedValue = result;
+          throw symbol;
+        }
 
-      let payload: P = {
-        kind: 'waterfall',
-        context: pluginContext,
-        current: value,
-        middleware: next,
-      };
+        const info: PluginExecutionInfo<any, any> = Object.assign(
+          closeWithResult,
+          {
+            index: pluginContext.getHandlerIndex(next),
+            existing: pluginContext.middlewareList,
+            closeWithResult,
+          }
+        );
 
-      payload = await pluginContext.__onExecStart(payload);
-      payload.current = await next(await value, context, info);
-      payload = await pluginContext.__onExecEnd(payload);
+        type P = OnPluginExecArgument<any, any, 'waterfall'>;
 
-      return payload.current;
-    }, Promise.resolve(initial));
+        let payload: P = {
+          kind: 'waterfall',
+          context: pluginContext,
+          current: value,
+          middleware: next,
+        };
+
+        payload = await pluginContext.__onPluginExecStart(payload);
+        payload.current = await next(await value, context, info);
+        payload = await pluginContext.__onPluginExecEnd(payload);
+        return payload.current;
+      }, Promise.resolve(initial));
+    } catch (e: any) {
+      if (e === symbol) return forceFinishedValue;
+      if (isEarlyHookResult(e)) return e.value;
+      throw e;
+    }
   };
 
   return { register, exec, listeners, pluginContext } as any;
