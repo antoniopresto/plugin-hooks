@@ -134,30 +134,39 @@ export function createFactoryContext<T, C>(
         payload.current = resolvedCurrent;
         payload = await (onStart ? onStart(payload) : payload);
 
+        if (payload.current === undefined) {
+          payload.current = resolvedCurrent;
+        }
+
         const value = await payload.current;
         value !== undefined && parse(value);
-        return onEnd ? onEnd(payload) : payload;
+        const temp = onEnd ? onEnd(payload) : payload;
+        if (temp === undefined) return value;
+        return temp;
       });
     }
 
+    const resolvedCurrent = payload.current;
+
     const candidate = onStart ? onStart(payload) : payload;
+
     if (isPromiseLike(candidate)) {
       throw new Error(
         `Expected ${payload.kind} hooks to return non Promise values.`
       );
     }
-    payload = candidate;
 
+    if (candidate.current === undefined) candidate.current = resolvedCurrent;
+    payload = candidate;
     const value = payload.current;
     value !== undefined && parse(value);
-
     const candidateResult = onEnd ? onEnd(payload) : payload;
-
     if (isPromiseLike(candidateResult)) {
       throw new Error(
         `Expected ${payload.kind} hooks to return non Promise values.`
       );
     }
+    if (candidateResult.current === undefined) payload.current = value;
 
     return candidateResult;
   }
