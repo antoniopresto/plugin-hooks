@@ -76,15 +76,23 @@ describe('hooks', () => {
     test('waterfall', async () => {
       const hook = waterfall<number, {}>();
 
-      hook.register(function times2(val) {
-        return val * 2;
+      hook.register(async function times2(val) {
+        return new Promise((resolve) => {
+          setTimeout(() => {
+            resolve(val * 2);
+          }, 100);
+        });
       });
 
       hook.register(async function times3(val) {
-        return val * 3;
+        return new Promise((resolve) => {
+          setTimeout(() => {
+            resolve(val * 3);
+          }, 100);
+        });
       });
 
-      const r1 = await hook.exec(1, {});
+      const r1 = await hook.exec(Promise.resolve(1) as any, {});
       expect(r1).toBe(6);
     });
 
@@ -127,6 +135,13 @@ describe('hooks', () => {
       const r1 = await hook.exec(1);
       expect(r1).toBe(7777);
       expect(calledNext).toBe(false);
+    });
+
+    test('return initial value when without plugins', async () => {
+      const hook = waterfall<number>();
+
+      const r1 = await hook.exec(1);
+      expect(r1).toBe(1);
     });
   });
 

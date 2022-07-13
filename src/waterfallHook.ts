@@ -70,7 +70,9 @@ export const waterfall: CreateWaterfallHook = function (options = {}) {
     let forceFinishedValue = symbol;
 
     try {
-      return await listeners.reduce(async (value: any, next, index) => {
+      return await listeners.reduce(async (_value, next) => {
+        const value = await _value;
+
         function closeWithResult(result: any) {
           forceFinishedValue = result;
           throw symbol;
@@ -95,7 +97,10 @@ export const waterfall: CreateWaterfallHook = function (options = {}) {
         };
 
         payload = await pluginContext.__onPluginExecStart(payload);
-        payload.current = await next(await value, context, info);
+        const candidate = await next(value, context, info);
+        if (candidate !== undefined) {
+          payload.current = candidate;
+        }
         payload = await pluginContext.__onPluginExecEnd(payload);
         return payload.current;
       }, Promise.resolve(initial));

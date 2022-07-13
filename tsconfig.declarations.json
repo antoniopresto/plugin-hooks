@@ -2,7 +2,10 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "outDir": "lib",
+    "rootDir": "src",
+    "baseUrl": "./src",
     "declaration": true,
     "emitDeclarationOnly": true
-  }
+  },
+  "include": ["!*.spec.ts", "src/*.ts"]
 }
