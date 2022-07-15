@@ -1,6 +1,6 @@
 {
   "name": "plugin-hooks",
-  "version": "1.1.0-rc.13",
+  "version": "1.1.0-rc.14",
   "main": "lib/index.js",
   "author": "antoniopresto <antoniopresto@gmail.com>",
   "license": "MIT",
@@ -12,7 +12,7 @@
     "prepublish": "npm run build"
   },
   "dependencies": {
-    "@darch/schema": "2.0.0-alpha.1657067153.60"
+    "@darch/schema": "2.0.0-alpha.1657853951.70"
   },
   "resolutions": {
     "ts-loader": "9.3.1",
