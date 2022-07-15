@@ -1,12 +1,10 @@
 import { parallel, Parallel, ParallelMiddleware } from './parallelHook';
 import { Waterfall, waterfall, WaterfallMiddleware } from './waterfallHook';
-import { createType, FieldDefinitionConfig } from '@darch/schema';
 
 export interface PluginOptions<T, C> {
   onPluginExecStart?: OnMiddlewareExec<T, C>;
   onPluginExecEnd?: OnMiddlewareExec<T, C>;
   executionsCountLimit?: number;
-  schema?: FieldDefinitionConfig;
   pluginContext?: PluginContext<T, C>;
 }
 
@@ -24,7 +22,6 @@ export interface PluginExecutionInfo<T, C> {
 
 export interface PluginContext<T, C> {
   _id: string;
-  parse(value: any): any;
   middlewareList: (ParallelMiddleware<T, C> | WaterfallMiddleware<T, C>)[];
   getHandlerIndex(
     middleware: WaterfallMiddleware<T, C> | ParallelMiddleware<T, C>
@@ -92,19 +89,13 @@ export function createFactoryContext<T, C>(
   const _id = randomStringSimple();
 
   const {
-    schema,
     onPluginExecEnd,
     onPluginExecStart,
     executionsCountLimit = Infinity,
   } = options;
-
-  const type = schema ? createType(_id, schema as any) : undefined;
-
-  const parse = type ? type.parse : (..._args: any[]) => undefined;
-
+  
   const context: PluginContext<any, any> = {
     _id,
-    parse,
     executionsCountLimit,
     middlewareList: [],
     getHandlerIndex: undefined as any,
@@ -139,7 +130,6 @@ export function createFactoryContext<T, C>(
         }
 
         const value = await payload.current;
-        value !== undefined && parse(value);
         const temp = onEnd ? onEnd(payload) : payload;
         if (temp === undefined) return value;
         return temp;
@@ -159,7 +149,6 @@ export function createFactoryContext<T, C>(
     if (candidate.current === undefined) candidate.current = resolvedCurrent;
     payload = candidate;
     const value = payload.current;
-    value !== undefined && parse(value);
     const candidateResult = onEnd ? onEnd(payload) : payload;
     if (isPromiseLike(candidateResult)) {
       throw new Error(
