@@ -6,6 +6,7 @@ export interface PluginOptions<T, C> {
   onPluginExecEnd?: OnMiddlewareExec<T, C>;
   executionsCountLimit?: number;
   pluginContext?: PluginContext<T, C>;
+  returnOnFirst?: boolean;
 }
 
 export interface PluginRegisterInfo<T, C> {
@@ -93,7 +94,7 @@ export function createFactoryContext<T, C>(
     onPluginExecStart,
     executionsCountLimit = Infinity,
   } = options;
-  
+
   const context: PluginContext<any, any> = {
     _id,
     executionsCountLimit,

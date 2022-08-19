@@ -96,6 +96,26 @@ describe('hooks', () => {
       expect(r1).toBe(6);
     });
 
+    test('returnOnFirstResult', async () => {
+      const hook = waterfall<number, {}>({ returnOnFirst: true });
+
+      hook.register(function a1() {});
+      hook.register(async function a3() {
+        return 3333;
+      });
+
+      hook.register(async function times3(val) {
+        return new Promise((resolve) => {
+          setTimeout(() => {
+            resolve(val * 3);
+          }, 100);
+        });
+      });
+
+      const r1 = await hook.exec(Promise.resolve(1) as any, {});
+      expect(r1).toBe(3333);
+    });
+
     test('handle closeWithResult', async () => {
       const hook = waterfall<number>();
 

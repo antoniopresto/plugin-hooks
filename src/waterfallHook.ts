@@ -40,7 +40,11 @@ export interface waterfallHook extends CreateWaterfallHook {}
 export const waterfall: CreateWaterfallHook = function (options = {}) {
   const listeners: WaterfallMiddleware<any, any>[] = [];
 
-  const { pluginContext = createFactoryContext(options) } = options;
+  const {
+    //
+    pluginContext = createFactoryContext(options),
+    returnOnFirst,
+  } = options;
 
   let canAddNew = true;
 
@@ -98,9 +102,14 @@ export const waterfall: CreateWaterfallHook = function (options = {}) {
 
         payload = await pluginContext.__onPluginExecStart(payload);
         const candidate = await next(value, context, info);
+
         if (candidate !== undefined) {
           payload.current = candidate;
+          if (returnOnFirst) {
+            closeWithResult(candidate);
+          }
         }
+
         payload = await pluginContext.__onPluginExecEnd(payload);
         return payload.current;
       }, Promise.resolve(initial));
