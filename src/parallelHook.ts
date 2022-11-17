@@ -6,6 +6,7 @@ import {
   PluginRegisterInfo,
   OnPluginExecArgument,
 } from './createHooks';
+import { IsKnown } from './type-utils';
 
 export type ParallelMiddleware<T, C> = {
   (param: T, context: C, info: PluginExecutionInfo<T, C>): void;
@@ -16,15 +17,17 @@ export type TParallelRegister<T, C> = {
   (middleware: ParallelMiddleware<T, C>): PluginRegisterInfo<T, C>;
 };
 
-export type ParallelExec<T, C = never> = C extends {}
-  ? (initialValue: T, context: C) => void
-  : (initialValue: T) => void;
+export type ParallelExec<T, C = never> = IsKnown<C> extends 1
+  ? [C] extends [undefined]
+    ? (initialValue: T, context?: C) => void
+    : (initialValue: T, context: C) => void
+  : (initialValue: T, context?: C) => void;
 
 export type Parallel<T, C> = {
   exec: ParallelExec<T, C>;
   register: TParallelRegister<T, C>;
   listeners: ParallelMiddleware<T, C>[];
-  context: PluginContext<T, C>;
+  pluginContext: PluginContext<T, C>;
 };
 
 export type CreateParallelHook = {
@@ -104,8 +107,5 @@ export const parallel: CreateParallelHook = function (options = {}) {
     }
   };
 
-  return { register, exec, listeners, context: pluginContext } as Parallel<
-    any,
-    any
-  >;
+  return { register, exec, listeners, pluginContext } as Parallel<any, any>;
 };

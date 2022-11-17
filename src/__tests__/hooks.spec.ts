@@ -8,7 +8,7 @@ describe('hooks', () => {
     const p = hooks.parallel();
     const w = hooks.waterfall();
 
-    expect(p.context).toBe(hooks.context);
+    expect(p.pluginContext).toBe(hooks.context);
     expect(w.pluginContext).toBe(hooks.context);
     expect(hooks.context._id).toMatch(/\d{5,}/);
   });
@@ -25,7 +25,7 @@ describe('hooks', () => {
     p.register(p2);
     p.register(p1);
 
-    expect(p.context.getHandlerIndex(p2)).toBe(2);
+    expect(p.pluginContext.getHandlerIndex(p2)).toBe(2);
   });
 
   test('__onRegister', async () => {

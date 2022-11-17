@@ -16,20 +16,22 @@ export * from './parallelHook';
 export * from './waterfallHook';
 export * from './createHooks';
 
+export * from './PluginHook';
+
 export const pluginHooks = {
   parallel,
-  waterfall
-}
+  waterfall,
+};
 
-export const hooks = pluginHooks
-export const Hooks = pluginHooks
-export const PluginHooks = pluginHooks
+export const hooks = pluginHooks;
+export const Hooks = pluginHooks;
+export const PluginHooks = pluginHooks;
 
 export interface pluginHooks {
- parallel: CreateParallelHook,
- waterfall: CreateWaterfallHook
+  parallel: CreateParallelHook;
+  waterfall: CreateWaterfallHook;
 }
 
-export type hooks = pluginHooks
-export type Hooks = pluginHooks
-export type PluginHooks = pluginHooks
+export type hooks = pluginHooks;
+export type Hooks = pluginHooks;
+export type PluginHooks = pluginHooks;

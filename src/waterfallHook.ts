@@ -7,6 +7,7 @@ import {
   PluginOptions,
   PluginRegisterInfo,
 } from './createHooks';
+import { IsKnown } from './type-utils';
 
 export type WaterfallMiddleware<T, C> = {
   (val: T, context: C, info: PluginExecutionInfo<T, C>):
@@ -19,9 +20,11 @@ export interface TWaterfallRegister<T, C> {
   (middleware: WaterfallMiddleware<T, C>): PluginRegisterInfo<T, C>;
 }
 
-export type WaterfallExec<T, C = never> = C extends {}
-  ? (initialValue: T, context: C) => Promise<T>
-  : (initialValue: T) => Promise<T>;
+export type WaterfallExec<T, C = never> = IsKnown<C> extends 1
+  ? [C] extends [undefined]
+    ? (initialValue: T, context?: C) => Promise<T>
+    : (initialValue: T, context: C) => Promise<T>
+  : (initialValue: T, context?: C) => Promise<T>;
 
 export type Waterfall<T, C> = {
   exec: WaterfallExec<T, C>;
