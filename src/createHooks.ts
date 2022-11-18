@@ -1,5 +1,10 @@
 import { parallel, Parallel, ParallelMiddleware } from './parallelHook';
-import { Waterfall, waterfall, WaterfallMiddleware } from './waterfallHook';
+import {
+  Ignored,
+  Waterfall,
+  waterfall,
+  WaterfallMiddleware,
+} from './waterfallHook';
 
 export interface PluginOptions<T, C> {
   onPluginExecStart?: OnMiddlewareExec<T, C>;
@@ -14,10 +19,21 @@ export interface PluginRegisterInfo<T, C> {
   existing: (ParallelMiddleware<T, C> | WaterfallMiddleware<T, C>)[];
 }
 
-export interface PluginExecutionInfo<T, C> {
+export interface PluginExecutionContext<T, C> {
   index: number;
+  ignoredCount: number; // how many listeners returned undefined
+  handledCount: number; // how many listeners returned values
+
   existing: (ParallelMiddleware<T, C> | WaterfallMiddleware<T, C>)[];
   closeWithResult: (result: T) => any;
+
+  IgnoredSymbol: Ignored;
+
+  ignore(): Ignored;
+}
+
+export interface PluginExecutionInfo<T, C>
+  extends PluginExecutionContext<T, C> {
   (result: T): any;
 }
 

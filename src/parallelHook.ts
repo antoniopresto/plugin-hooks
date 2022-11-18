@@ -5,8 +5,10 @@ import {
   PluginContext,
   PluginRegisterInfo,
   OnPluginExecArgument,
+  PluginExecutionContext,
 } from './createHooks';
 import { IsKnown } from './type-utils';
+import { Ignored } from './waterfallHook';
 
 export type ParallelMiddleware<T, C> = {
   (param: T, context: C, info: PluginExecutionInfo<T, C>): void;
@@ -76,13 +78,21 @@ export const parallel: CreateParallelHook = function (options = {}) {
           throw symbol;
         }
 
+        const self: PluginExecutionContext<any, any> = {
+          IgnoredSymbol: Ignored as Ignored,
+          handledCount: 0,
+          ignoredCount: 0,
+          index: pluginContext.getHandlerIndex(middleware),
+          existing: pluginContext.middlewareList,
+          closeWithResult,
+          ignore() {
+            throw new Error(`ignore() is not supported by ParallelExec.`);
+          },
+        };
+
         const info: PluginExecutionInfo<any, any> = Object.assign(
           closeWithResult,
-          {
-            index: pluginContext.getHandlerIndex(middleware),
-            existing: pluginContext.middlewareList,
-            closeWithResult,
-          }
+          self
         );
 
         type P = OnPluginExecArgument<any, any, 'parallel'>;

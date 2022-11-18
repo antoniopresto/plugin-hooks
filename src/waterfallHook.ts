@@ -3,17 +3,23 @@ import {
   isEarlyHookResult,
   OnPluginExecArgument,
   PluginContext,
+  PluginExecutionContext,
   PluginExecutionInfo,
   PluginOptions,
   PluginRegisterInfo,
 } from './createHooks';
 import { IsKnown } from './type-utils';
 
+export const Ignored = Symbol('IGNORED');
+export type Ignored = typeof Ignored & {};
+
 export type WaterfallMiddleware<T, C> = {
-  (val: T, context: C, info: PluginExecutionInfo<T, C>):
-    | Promise<T | void>
-    | T
-    | void;
+  (
+    this: PluginExecutionContext<T, C>,
+    currentValue: T,
+    context: C,
+    info: PluginExecutionInfo<T, C>
+  ): Promise<T | Ignored | void> | T | Ignored | void;
 };
 
 export interface TWaterfallRegister<T, C> {
@@ -31,6 +37,9 @@ export type Waterfall<T, C> = {
   register: TWaterfallRegister<T, C>;
   listeners: WaterfallMiddleware<T, C>[];
   pluginContext: PluginContext<T, C>;
+
+  ignoredCount: number; // how many listeners returned undefined
+  handledCount: number; // how many listeners returned values
 };
 
 export type CreateWaterfallHook = {
@@ -73,25 +82,38 @@ export const waterfall: CreateWaterfallHook = function (options = {}) {
       Object.freeze(listeners);
     }
 
-    const symbol = '__FORCE:FINISHED:VALUE__';
-    let forceFinishedValue = symbol;
+    const ForceFinishSymbol = Symbol('FORCE_FINISH');
+    let forceFinishedValue = ForceFinishSymbol;
+
+    let ignoredCount = listeners.length;
+    let handledCount = 0;
 
     try {
-      return await listeners.reduce(async (_value, next) => {
+      return await listeners.reduce(async (_value, _next) => {
         const value = await _value;
+
+        const self: PluginExecutionContext<any, any> = {
+          IgnoredSymbol: Ignored as Ignored,
+          ignoredCount,
+          handledCount,
+          index: pluginContext.getHandlerIndex(_next),
+          existing: pluginContext.middlewareList,
+          closeWithResult,
+          ignore(): Ignored {
+            throw Ignored;
+          },
+        };
+
+        const next = _next.bind(self);
 
         function closeWithResult(result: any) {
           forceFinishedValue = result;
-          throw symbol;
+          throw ForceFinishSymbol;
         }
 
         const info: PluginExecutionInfo<any, any> = Object.assign(
           closeWithResult,
-          {
-            index: pluginContext.getHandlerIndex(next),
-            existing: pluginContext.middlewareList,
-            closeWithResult,
-          }
+          self
         );
 
         type P = OnPluginExecArgument<any, any, 'waterfall'>;
@@ -104,9 +126,20 @@ export const waterfall: CreateWaterfallHook = function (options = {}) {
         };
 
         payload = await pluginContext.__onPluginExecStart(payload);
-        const candidate = await next(value, context, info);
 
-        if (candidate !== undefined) {
+        let candidate;
+
+        try {
+          candidate = await next(value, context, info);
+        } catch (e) {
+          if (e === Ignored) {
+            candidate = Ignored;
+          } else {
+            throw e;
+          }
+        }
+
+        if (candidate !== undefined && candidate !== Ignored) {
           payload.current = candidate;
           if (returnOnFirst) {
             closeWithResult(candidate);
@@ -117,7 +150,7 @@ export const waterfall: CreateWaterfallHook = function (options = {}) {
         return payload.current;
       }, Promise.resolve(initial));
     } catch (e: any) {
-      if (e === symbol) return forceFinishedValue;
+      if (e === ForceFinishSymbol) return forceFinishedValue;
       if (isEarlyHookResult(e)) return e.value;
       throw e;
     }
