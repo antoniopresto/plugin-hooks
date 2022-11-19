@@ -1,25 +1,24 @@
 import {
-  createFactoryContext,
   isEarlyHookResult,
-  OnPluginExecArgument,
-  PluginContext,
+  MaybeDraft,
   PluginExecutionContext,
-  PluginExecutionInfo,
   PluginOptions,
   PluginRegisterInfo,
 } from './createHooks';
 import { IsKnown } from './type-utils';
+import { current, enablePatches, isDraft, Patch, produce } from 'immer';
+enablePatches();
 
-export const Ignored = Symbol('IGNORED');
-export type Ignored = typeof Ignored & {};
+export const EmptySymbol = Symbol('EmptySymbol');
+export type EmptySymbol = typeof EmptySymbol & {};
 
 export type WaterfallMiddleware<T, C> = {
   (
     this: PluginExecutionContext<T, C>,
-    currentValue: T,
+    currentValue: MaybeDraft<T>,
     context: C,
-    info: PluginExecutionInfo<T, C>
-  ): Promise<T | Ignored | void> | T | Ignored | void;
+    pluginExecutionContext: PluginExecutionContext<T, C>
+  ): Promise<T | EmptySymbol | void> | T | EmptySymbol | void;
 };
 
 export interface TWaterfallRegister<T, C> {
@@ -36,10 +35,6 @@ export type Waterfall<T, C> = {
   exec: WaterfallExec<T, C>;
   register: TWaterfallRegister<T, C>;
   listeners: WaterfallMiddleware<T, C>[];
-  pluginContext: PluginContext<T, C>;
-
-  ignoredCount: number; // how many listeners returned undefined
-  handledCount: number; // how many listeners returned values
 };
 
 export type CreateWaterfallHook = {
@@ -49,112 +44,218 @@ export type CreateWaterfallHook = {
 export interface waterfall extends CreateWaterfallHook {}
 export interface waterfallHook extends CreateWaterfallHook {}
 
-export const waterfall: CreateWaterfallHook = function (options = {}) {
-  const listeners: WaterfallMiddleware<any, any>[] = [];
+export const waterfall: CreateWaterfallHook = function <T, C>(
+  options: PluginOptions<T, C> = {}
+) {
+  const listeners: WaterfallMiddleware<T, C>[] = [];
 
-  const {
-    //
-    pluginContext = createFactoryContext(options),
-    returnOnFirst,
-  } = options;
+  const { returnOnFirst } = options;
 
   let canAddNew = true;
 
-  const register: TWaterfallRegister<any, any> = (
-    middleware: WaterfallMiddleware<any, any>
+  const register: TWaterfallRegister<T, C> = (
+    middleware: WaterfallMiddleware<T, C>
   ) => {
     if (typeof middleware !== 'function') {
       throw new Error(`"${typeof middleware}" is not a valid middleware type`);
     }
 
-    pluginContext.__onRegister(middleware);
     listeners.push(middleware);
 
     return {
-      index: pluginContext?.getHandlerIndex(middleware) ?? listeners.length - 1,
-      existing: pluginContext?.middlewareList || listeners,
+      index: listeners.length - 1,
+      existing: listeners,
     };
   };
 
-  const exec: WaterfallExec<any, any> = async (initial, context) => {
+  const exec: WaterfallExec<any, any> = async (
+    initial: T,
+    context: C
+  ): Promise<T> => {
+    initial = await initial;
+
     if (canAddNew) {
       canAddNew = false;
       Object.freeze(listeners);
     }
 
     const ForceFinishSymbol = Symbol('FORCE_FINISH');
-    let forceFinishedValue = ForceFinishSymbol;
+    const ExitMiddlewareSymbol = Symbol('ExitMiddlewareSymbol');
+
+    let forceFinishedValue: typeof ForceFinishSymbol | T = ForceFinishSymbol;
 
     let ignoredCount = listeners.length;
     let handledCount = 0;
+    let finished = false;
+    let lastValue: T | EmptySymbol = initial;
+    const patches: Patch[] = [];
+
+    const allMiddlewareContext: PluginExecutionContext<T, C>[] = [];
+
+    function onFinish(error: Error | null, result: T | EmptySymbol) {
+      if (finished) return;
+      finished = true;
+      lastValue = isDraft(result) ? current(result) : result;
+
+      allMiddlewareContext.forEach((item) => {
+        item.finished = true;
+        item.finishedValue = lastValue;
+        item.finishedError = error;
+        item.ignoredCount = ignoredCount;
+        item.handledCount = handledCount;
+      });
+    }
 
     try {
-      return await listeners.reduce(async (_value, _next) => {
-        const value = await _value;
+      lastValue = await listeners.reduce(async (_value, middleware, index) => {
+        const awaited = await _value;
 
-        const self: PluginExecutionContext<any, any> = {
-          IgnoredSymbol: Ignored as Ignored,
+        let registeredCount = false;
+        function count() {
+          if (registeredCount) return;
+          registeredCount = true;
+          handledCount += 1;
+          ignoredCount -= 1;
+        }
+
+        const middlewarePatches: Patch[] = [];
+
+        let replacedValue: T | EmptySymbol = EmptySymbol;
+        const ReplaceSymbol = Symbol('REPLACE');
+
+        const self: PluginExecutionContext<T, C> = {
+          IgnoredSymbol: EmptySymbol as EmptySymbol,
           ignoredCount,
           handledCount,
-          index: pluginContext.getHandlerIndex(_next),
-          existing: pluginContext.middlewareList,
-          closeWithResult,
-          ignore(): Ignored {
-            throw Ignored;
+          index,
+          existing: listeners,
+          finish,
+          error: null,
+          finished,
+          finishedValue: awaited,
+          finishedError: null,
+          accumulatedPatches: patches,
+          exit() {
+            throw ExitMiddlewareSymbol;
+          },
+          replace(value: MaybeDraft<T>) {
+            count();
+
+            replacedValue = isDraft(value)
+              ? (current(value) as T)
+              : (value as T);
+
+            if (returnOnFirst) {
+              finish(replacedValue);
+            } else {
+              throw ReplaceSymbol;
+            }
           },
         };
 
-        const next = _next.bind(self);
+        allMiddlewareContext.push(self);
 
-        function closeWithResult(result: any) {
-          forceFinishedValue = result;
+        function finish(value: MaybeDraft<T>) {
+          forceFinishedValue = isDraft(value)
+            ? (current(value) as T)
+            : (value as T);
+          count();
+          onFinish(null, forceFinishedValue);
           throw ForceFinishSymbol;
         }
 
-        const info: PluginExecutionInfo<any, any> = Object.assign(
-          closeWithResult,
-          self
-        );
-
-        type P = OnPluginExecArgument<any, any, 'waterfall'>;
-
-        let payload: P = {
-          kind: 'waterfall',
-          context: pluginContext,
-          current: value,
-          middleware: next,
-        };
-
-        payload = await pluginContext.__onPluginExecStart(payload);
-
-        let candidate;
-
         try {
-          candidate = await next(value, context, info);
-        } catch (e) {
-          if (e === Ignored) {
-            candidate = Ignored;
-          } else {
-            throw e;
-          }
-        }
+          lastValue = await produce(
+            awaited,
+            async (draft) => {
+              const returnedValue = await middleware.call(
+                self,
+                draft,
+                context,
+                self
+              );
 
-        if (candidate !== undefined && candidate !== Ignored) {
-          payload.current = candidate;
-          if (returnOnFirst) {
-            closeWithResult(candidate);
-          }
-        }
+              if (
+                returnedValue !== undefined &&
+                returnedValue !== EmptySymbol
+              ) {
+                self.replace(returnedValue);
+                return draft;
+              } else {
+                return draft;
+              }
+            },
+            (_patches) => {
+              _patches = _patches.filter(
+                (el) =>
+                  typeof el.value?.then !== 'function' &&
+                  typeof el.value?.catch !== 'function'
+              );
 
-        payload = await pluginContext.__onPluginExecEnd(payload);
-        return payload.current;
+              if (!_patches.length) return;
+              count();
+              middlewarePatches.push(..._patches);
+              patches.push(..._patches);
+            }
+          );
+
+          if (middlewarePatches.length || replacedValue !== EmptySymbol) {
+            if (returnOnFirst) {
+              finish(lastValue);
+            }
+          }
+
+          return lastValue;
+        } catch (e: any) {
+          if (e === ExitMiddlewareSymbol) {
+            return lastValue === EmptySymbol ? awaited : lastValue;
+          }
+
+          //
+          if (e === ReplaceSymbol) {
+            const value = (isDraft(replacedValue)!
+              ? current(replacedValue)
+              : replacedValue) as unknown as T;
+            count();
+            return (lastValue = value);
+          }
+
+          if (e === ForceFinishSymbol) {
+            count();
+            throw ForceFinishSymbol;
+          }
+
+          onFinish(e, EmptySymbol);
+          throw e;
+        }
       }, Promise.resolve(initial));
     } catch (e: any) {
-      if (e === ForceFinishSymbol) return forceFinishedValue;
-      if (isEarlyHookResult(e)) return e.value;
+      if (e === ForceFinishSymbol) {
+        const value = (isDraft(forceFinishedValue)!
+          ? current(forceFinishedValue)
+          : forceFinishedValue) as unknown as T;
+
+        onFinish(null, value);
+        return value;
+      }
+
+      if (isEarlyHookResult(e)) {
+        const value = (isDraft(e.value)!
+          ? current(e.value)
+          : e.value) as unknown as T;
+
+        onFinish(null, value);
+        return value;
+      }
+
+      onFinish(e, EmptySymbol);
       throw e;
     }
+
+    onFinish(null, lastValue);
+
+    return lastValue;
   };
 
-  return { register, exec, listeners, pluginContext } as any;
+  return { register, exec, listeners };
 };

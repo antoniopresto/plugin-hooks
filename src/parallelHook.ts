@@ -1,17 +1,20 @@
 import {
-  createFactoryContext,
-  PluginOptions,
-  PluginExecutionInfo,
-  PluginContext,
-  PluginRegisterInfo,
-  OnPluginExecArgument,
+  MaybeDraft,
   PluginExecutionContext,
+  PluginOptions,
+  PluginRegisterInfo,
 } from './createHooks';
 import { IsKnown } from './type-utils';
-import { Ignored } from './waterfallHook';
+import { EmptySymbol } from './waterfallHook';
+import { applyPatches, current, Draft, isDraft, Patch, produce } from 'immer';
 
 export type ParallelMiddleware<T, C> = {
-  (param: T, context: C, info: PluginExecutionInfo<T, C>): void;
+  (
+    this: PluginExecutionContext<T, C>,
+    param: Draft<T>,
+    context: C,
+    pluginExecutionContext: PluginExecutionContext<T, C>
+  ): void;
 };
 
 // returns a promise with the first middleware return
@@ -29,7 +32,6 @@ export type Parallel<T, C> = {
   exec: ParallelExec<T, C>;
   register: TParallelRegister<T, C>;
   listeners: ParallelMiddleware<T, C>[];
-  pluginContext: PluginContext<T, C>;
 };
 
 export type CreateParallelHook = {
@@ -39,83 +41,164 @@ export type CreateParallelHook = {
 export interface parallel extends CreateParallelHook {}
 export interface parallelHook extends CreateParallelHook {}
 
-export const parallel: CreateParallelHook = function (options = {}) {
-  const { pluginContext = createFactoryContext(options) } = options;
-  const { executionsCountLimit } = pluginContext;
+export const parallel: CreateParallelHook = function <T, C>(
+  options: PluginOptions<T, C> = {}
+) {
+  const { returnOnFirst } = options;
 
-  const listeners: ParallelMiddleware<any, any>[] = [];
+  const listeners: ParallelMiddleware<T, C>[] = [];
 
-  const register: TParallelRegister<any, any> = (middleware) => {
+  const register: TParallelRegister<T, C> = (middleware) => {
     if (typeof middleware !== 'function') {
       throw new Error(`"${typeof middleware}" is not a valid middleware type`);
     }
-    pluginContext.__onRegister(middleware);
+
     listeners.push(middleware);
 
     return {
-      index: pluginContext.getHandlerIndex(middleware),
-      existing: pluginContext.middlewareList,
+      index: listeners.length - 1,
+      existing: listeners,
     };
   };
 
-  const exec: ParallelExec<any, any> = (value, context) => {
-    const nextCount = pluginContext.lastExecutionStartCount + 1;
-    if (nextCount > executionsCountLimit) {
-      throw new Error(
-        `This plugin has a executions count limit of ${executionsCountLimit}.\n` +
-          `The next run count would be ${nextCount}.\n`
-      );
-    }
-    pluginContext.lastExecutionStartCount = nextCount;
+  const exec: ParallelExec<any, any> = (value: T, context: C) => {
+    const ForceFinishSymbol = Symbol('FORCE_FINISH');
+    const ReplaceSymbol = Symbol('ReplaceSymbol');
+    const ExitMiddlewareSymbol = Symbol('ExitMiddlewareSymbol');
 
-    const symbol = '__FORCE:FINISHED:VALUE__';
-    let forceFinishedValue = symbol;
+    type ForceFinishSymbol = typeof ForceFinishSymbol;
+
+    let forceFinishedValue: T | ForceFinishSymbol = ForceFinishSymbol;
+
+    let lastValue: T | EmptySymbol = value;
+    let ignoredCount = listeners.length;
+    let handledCount = 0;
+
+    const patches: Patch[] = [];
+
+    const allMiddlewareContext: PluginExecutionContext<T, C>[] = [];
+
+    let finished = false;
+    function onFinish(error: Error | null, result: T | EmptySymbol) {
+      if (finished) return;
+      finished = true;
+
+      if (!error && patches.length && value && typeof value === 'object') {
+        const clone = applyPatches(value, patches);
+        // @ts-ignore
+        Object.keys(value).forEach((k) => delete value[k]);
+        lastValue = Object.assign(value, clone);
+      }
+
+      allMiddlewareContext.forEach((item) => {
+        item.finished = true;
+        item.finishedValue = result;
+        item.finishedError = error;
+        item.ignoredCount = ignoredCount;
+        item.handledCount = handledCount;
+      });
+    }
 
     try {
       listeners.forEach((middleware, index) => {
-        function closeWithResult(result: any) {
-          forceFinishedValue = result;
-          throw symbol;
+        let registeredCount = false;
+        function count() {
+          if (registeredCount) return;
+          registeredCount = true;
+          handledCount += 1;
+          ignoredCount -= 1;
+        }
+
+        function finish(result: MaybeDraft<T>) {
+          forceFinishedValue = isDraft(result)
+            ? (current(result) as T)
+            : (result as T);
+
+          onFinish(null, forceFinishedValue);
+          throw ForceFinishSymbol;
         }
 
         const self: PluginExecutionContext<any, any> = {
-          IgnoredSymbol: Ignored as Ignored,
+          IgnoredSymbol: EmptySymbol as EmptySymbol,
           handledCount: 0,
           ignoredCount: 0,
-          index: pluginContext.getHandlerIndex(middleware),
-          existing: pluginContext.middlewareList,
-          closeWithResult,
-          ignore() {
-            throw new Error(`ignore() is not supported by ParallelExec.`);
+          index,
+          existing: listeners,
+          accumulatedPatches: patches,
+          finish,
+          finished: false,
+          finishedError: null,
+          finishedValue: value,
+          error: null,
+          exit() {
+            throw ExitMiddlewareSymbol;
+          },
+          replace(value) {
+            lastValue = value;
+            throw ReplaceSymbol;
           },
         };
 
-        const info: PluginExecutionInfo<any, any> = Object.assign(
-          closeWithResult,
-          self
-        );
+        allMiddlewareContext.push(self);
 
-        type P = OnPluginExecArgument<any, any, 'parallel'>;
+        const middlewarePatches: Patch[] = [];
 
-        let payload: P = {
-          kind: 'parallel',
-          context: pluginContext,
-          middleware,
-          current: value,
-        };
+        try {
+          lastValue = produce(
+            value,
+            (draft) => {
+              middleware.call(self, draft, context, self);
+              return draft;
+            },
+            (_patches) => {
+              if (!_patches.length) return;
+              count();
+              middlewarePatches.push(..._patches);
+              patches.push(..._patches);
+            }
+          );
+        } catch (e: any) {
+          if (e === ExitMiddlewareSymbol) {
+            return lastValue === EmptySymbol ? value : lastValue;
+          }
 
-        payload = pluginContext.__onPluginExecStart(payload) as P;
+          if (e === ReplaceSymbol) {
+            const value = (isDraft(lastValue)!
+              ? current(lastValue)
+              : lastValue) as unknown as T;
+            return (lastValue = value);
+          }
 
-        middleware(payload.current, context, info);
+          if (e === ForceFinishSymbol) {
+            throw ForceFinishSymbol;
+          }
 
-        pluginContext.__onPluginExecEnd(payload);
+          onFinish(e, EmptySymbol);
+          throw e;
+        }
+
+        if (middlewarePatches.length) {
+          if (returnOnFirst) {
+            finish(lastValue);
+          }
+        }
       });
     } catch (e) {
-      if (e !== symbol) {
+      if (e === ForceFinishSymbol) {
+        const value = (isDraft(forceFinishedValue)!
+          ? current(forceFinishedValue)
+          : forceFinishedValue) as unknown as T;
+
+        lastValue = value;
+        onFinish(null, value);
+      } else {
+        onFinish(e as Error, EmptySymbol);
         throw e;
       }
     }
+
+    onFinish(null, lastValue);
   };
 
-  return { register, exec, listeners, pluginContext } as Parallel<any, any>;
+  return { register, exec, listeners };
 };
