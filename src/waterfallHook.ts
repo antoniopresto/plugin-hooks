@@ -15,7 +15,7 @@ export type EmptySymbol = typeof EmptySymbol & {};
 export type WaterfallMiddleware<T, C> = {
   (
     this: PluginExecutionContext<T, C>,
-    currentValue: MaybeDraft<T>,
+    currentValue: T,
     context: C,
     pluginExecutionContext: PluginExecutionContext<T, C>
   ): Promise<T | EmptySymbol | void> | T | EmptySymbol | void;
@@ -170,7 +170,7 @@ export const waterfall: CreateWaterfallHook = function <T, C>(
             async (draft) => {
               const returnedValue = await middleware.call(
                 self,
-                draft,
+                draft as any,
                 context,
                 self
               );

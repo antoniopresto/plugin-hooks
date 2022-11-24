@@ -24,10 +24,6 @@ export class PluginHook<Value, Context> {
   get listeners() {
     return this.hook.listeners;
   }
-
-  get pluginContext() {
-    return this.hook.pluginContext;
-  }
 }
 
 export class PluginHookSync<Value, Context> {
@@ -51,9 +47,5 @@ export class PluginHookSync<Value, Context> {
 
   get listeners() {
     return this.hook.listeners;
-  }
-
-  get pluginContext() {
-    return this.hook.pluginContext;
   }
 }

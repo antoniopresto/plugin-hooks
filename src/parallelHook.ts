@@ -11,7 +11,7 @@ import { applyPatches, current, Draft, isDraft, Patch, produce } from 'immer';
 export type ParallelMiddleware<T, C> = {
   (
     this: PluginExecutionContext<T, C>,
-    param: Draft<T>,
+    param: T,
     context: C,
     pluginExecutionContext: PluginExecutionContext<T, C>
   ): void;
@@ -147,7 +147,7 @@ export const parallel: CreateParallelHook = function <T, C>(
           lastValue = produce(
             value,
             (draft) => {
-              middleware.call(self, draft, context, self);
+              middleware.call(self, draft as any, context, self);
               return draft;
             },
             (_patches) => {
