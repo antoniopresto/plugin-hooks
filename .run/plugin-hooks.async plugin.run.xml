@@ -1,0 +1,17 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="plugin-hooks.async plugin" type="JavaScriptTestRunnerJest" nameIsGenerated="true">
+    <node-interpreter value="project" />
+    <node-options value="" />
+    <jest-package value="$PROJECT_DIR$/node_modules/jest" />
+    <working-dir value="$PROJECT_DIR$" />
+    <jest-options value="--watchAll" />
+    <envs />
+    <scope-kind value="TEST" />
+    <test-file value="$PROJECT_DIR$/src/__tests__/examples.spect.ts" />
+    <test-names>
+      <test-name value="plugin-hooks" />
+      <test-name value="async plugin" />
+    </test-names>
+    <method v="2" />
+  </configuration>
+</component>

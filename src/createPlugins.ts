@@ -1,11 +1,5 @@
-import { Draft, Patch } from 'immer';
-import { parallel, Parallel, ParallelMiddleware } from './parallelHook';
-import {
-  EmptySymbol,
-  Waterfall,
-  waterfall,
-  WaterfallMiddleware,
-} from './waterfallHook';
+import { SyncPluginMiddleware } from './syncPlugin';
+import { EmptySymbol, AsyncPluginMiddleware } from './asyncPlugin';
 
 export interface PluginOptions<T, C> {
   executionsCountLimit?: number;
@@ -13,18 +7,15 @@ export interface PluginOptions<T, C> {
 }
 
 export interface PluginRegisterInfo<T, C> {
-  index: number;
-  existing: (ParallelMiddleware<T, C> | WaterfallMiddleware<T, C>)[];
+  name: string;
+  existing: (SyncPluginMiddleware<T, C> | AsyncPluginMiddleware<T, C>)[];
 }
-
-export type MaybeDraft<T> = Draft<T> | T;
 
 export interface PluginExecutionContext<T, C> {
   index: number;
   ignoredCount: number; // how many listeners called ignore()
   handledCount: number; // how many listeners updated values
-  accumulatedPatches: Patch[];
-  existing: (ParallelMiddleware<T, C> | WaterfallMiddleware<T, C>)[];
+  existing: (SyncPluginMiddleware<T, C> | AsyncPluginMiddleware<T, C>)[];
 
   /**
    * True if any middleware called finish() or all middlewares have executed
@@ -51,15 +42,15 @@ export interface PluginExecutionContext<T, C> {
   /**
    * Exit current middleware execution and go to the next
    */
-  replace(value: MaybeDraft<T>): void;
+  replace(value: T): void;
 }
 
-export type EarlyHookResult = {
+export type EarlyPluginResult = {
   fulfilled: true;
   value: any;
 };
 
-export function isEarlyHookResult(input: any): input is EarlyHookResult {
+export function isEarlyPluginResult(input: any): input is EarlyPluginResult {
   return (
     input &&
     typeof input === 'object' &&

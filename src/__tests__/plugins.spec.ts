@@ -1,12 +1,12 @@
-import { waterfall } from '../waterfallHook';
-import { parallel } from '../parallelHook';
+import { createAsyncPlugin } from '../asyncPlugin';
+import { createSyncPlugin } from '../syncPlugin';
 
-describe('hooks', () => {
-  describe('waterfall', () => {
-    test('waterfall', async () => {
-      const hook = waterfall<number, {}>();
+describe('plugins', () => {
+  describe('async', () => {
+    test('async', async () => {
+      const plugin = createAsyncPlugin<number, {}>();
 
-      hook.register(async function times2(val) {
+      plugin.pushMiddleware(async function times2(val) {
         return new Promise((resolve) => {
           setTimeout(() => {
             resolve(val * 2);
@@ -14,7 +14,7 @@ describe('hooks', () => {
         });
       });
 
-      hook.register(async function times3(val) {
+      plugin.pushMiddleware(async function times3(val) {
         return new Promise((resolve) => {
           setTimeout(() => {
             resolve(val * 3);
@@ -22,19 +22,19 @@ describe('hooks', () => {
         });
       });
 
-      const r1 = await hook.exec(Promise.resolve(1) as any, {});
+      const r1 = await plugin.dispatch(Promise.resolve(1) as any, {});
       expect(r1).toBe(6);
     });
 
     test('returnOnFirstResult', async () => {
-      const hook = waterfall<number, {}>({ returnOnFirst: true });
+      const plugin = createAsyncPlugin<number, {}>({ returnOnFirst: true });
 
-      hook.register(function a1() {});
-      hook.register(async function a3() {
+      plugin.pushMiddleware(function a1() {});
+      plugin.pushMiddleware(async function a3() {
         return 3333;
       });
 
-      hook.register(async function times3(val) {
+      plugin.pushMiddleware(async function times3(val) {
         return new Promise((resolve) => {
           setTimeout(() => {
             resolve(val * 3);
@@ -42,14 +42,14 @@ describe('hooks', () => {
         });
       });
 
-      const r1 = await hook.exec(Promise.resolve(1) as any, {});
+      const r1 = await plugin.dispatch(Promise.resolve(1) as any, {});
       expect(r1).toBe(3333);
     });
 
     test('handle finish', async () => {
-      const hook = waterfall<number>();
+      const plugin = createAsyncPlugin<number>();
 
-      hook.register(function times2(val, _, self) {
+      plugin(function times2(val, _, self) {
         setTimeout(() => {
           expect(this).toMatchObject({
             finishedValue: 555,
@@ -60,21 +60,21 @@ describe('hooks', () => {
           });
         }, 200);
 
-        return self.finish(555);
+        return this.finish(555);
       });
 
       let calledNext = false;
-      hook.register(async function times3(val) {
+      plugin(async function times3(val) {
         calledNext = true;
         return val * 3;
       });
 
-      hook.register(async function times4(val) {
+      plugin(async function times4(val) {
         calledNext = true;
         return val * 4;
       });
 
-      const r1 = await hook.exec(1);
+      const r1 = await plugin.dispatch(1);
       expect(r1).toBe(555);
       expect(calledNext).toBe(false);
 
@@ -86,9 +86,9 @@ describe('hooks', () => {
     });
 
     test('throw early result', async () => {
-      const hook = waterfall<number>();
+      const plugin = createAsyncPlugin<number>();
 
-      hook.register(function times2(val, _, info) {
+      plugin.pushMiddleware(function times2(val, _, info) {
         expect(info.index).toBe(0);
 
         throw {
@@ -98,39 +98,39 @@ describe('hooks', () => {
       });
 
       let calledNext = false;
-      hook.register(async function times3(val) {
+      plugin.pushMiddleware(async function times3(val) {
         calledNext = true;
         return val * 3;
       });
 
-      const r1 = await hook.exec(1);
+      const r1 = await plugin.dispatch(1);
       expect(r1).toBe(7777);
       expect(calledNext).toBe(false);
     });
 
     test('return initial value when without plugins', async () => {
-      const hook = waterfall<number>();
+      const plugin = createAsyncPlugin<number>();
 
-      const r1 = await hook.exec(1);
+      const r1 = await plugin.dispatch(1);
       expect(r1).toBe(1);
     });
   });
 
-  describe('parallel', () => {
-    test('parallel', () => {
-      const hook = parallel<any>();
+  describe('sync', () => {
+    test('sync', () => {
+      const plugin = createSyncPlugin<any>();
 
       const mutable: any = {};
 
-      hook.register(function times2(val) {
+      plugin(function times2(val) {
         val.foo = 123;
       });
 
-      hook.register(function times2(val) {
+      plugin(function times2(val) {
         val.bar = 456;
       });
 
-      const r1 = hook.exec(mutable);
+      const r1 = plugin.dispatch(mutable);
 
       expect(r1).toBe(undefined);
       expect(mutable.foo).toBe(123);
@@ -138,14 +138,14 @@ describe('hooks', () => {
     });
 
     test('handle finish', async () => {
-      const hook = parallel<number>();
+      const plugin = createSyncPlugin<number>();
 
-      hook.register(function times1(val, _a, context) {
+      plugin(function times1(val, _a, context) {
         return context.finish(555);
       });
 
       let calledNext = false;
-      hook.register(async function times3(val) {
+      plugin(async function times3(val) {
         calledNext = true;
         return val * 3;
       });
@@ -154,19 +154,19 @@ describe('hooks', () => {
     });
 
     test('throw errors', async () => {
-      const hook = parallel<any>();
+      const plugin = createSyncPlugin<any>();
 
       const mutable: any = {};
 
-      hook.register(function times2(val) {
+      plugin(function times2(val) {
         throw 'foo';
       });
 
-      hook.register(function times2(val) {
+      plugin(function times2(val) {
         return (val.bar = 456);
       });
 
-      expect(() => hook.exec(mutable)).toThrow('foo');
+      expect(() => plugin.dispatch(mutable)).toThrow('foo');
     });
   });
 });

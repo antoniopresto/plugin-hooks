@@ -1,6 +1,6 @@
 {
   "name": "plugin-hooks",
-  "version": "1.1.111",
+  "version": "2.0.0",
   "main": "lib/index.js",
   "author": "antoniopresto <antoniopresto@gmail.com>",
   "license": "MIT",
@@ -11,9 +11,7 @@
     "declarations": "tsc -p ./tsconfig.declarations.json",
     "prepublish": "npm run build"
   },
-  "dependencies": {
-    "immer": "^9.0.16"
-  },
+  "dependencies": {},
   "resolutions": {
     "ts-loader": "9.3.1",
     "ts-node": "10.7.0",
@@ -42,6 +40,7 @@
     "lib/*"
   ],
   "prettier": {
-    "singleQuote": true
+    "singleQuote": true,
+    "printWidth": 100
   }
 }
